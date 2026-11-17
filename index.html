@@ -139,17 +139,17 @@
                 <div class="grid grid-cols-2 gap-3">
                     <div>
                         <label class="block text-[11px] font-semibold text-gray-400 mb-1 uppercase">Norte (N)</label>
-                        <input type="number" step="0.001" id="n-input" required placeholder="7622823.527" class="w-full text-sm border border-gray-700 rounded p-2 bg-gray-800 text-white focus:ring-2 focus:ring-blue-500 outline-none font-mono">
+                        <input type="number" step="0.001" id="n-input" required placeholder="7622825" class="w-full text-sm border border-gray-700 rounded p-2 bg-gray-800 text-white focus:ring-2 focus:ring-blue-500 outline-none font-mono">
                     </div>
                     <div>
                         <label class="block text-[11px] font-semibold text-gray-400 mb-1 uppercase">Leste (E)</label>
-                        <input type="number" step="0.001" id="e-input" required placeholder="665456.783" class="w-full text-sm border border-gray-700 rounded p-2 bg-gray-800 text-white focus:ring-2 focus:ring-blue-500 outline-none font-mono">
+                        <input type="number" step="0.001" id="e-input" required placeholder="665464" class="w-full text-sm border border-gray-700 rounded p-2 bg-gray-800 text-white focus:ring-2 focus:ring-blue-500 outline-none font-mono">
                     </div>
                 </div>
 
                 <div>
                     <label class="block text-[11px] font-semibold text-gray-400 mb-1 uppercase">Altitude Atual (H) [m]</label>
-                    <input type="number" step="0.001" id="h-input" required placeholder="Ex: 632.608" class="w-full text-sm border border-gray-600 rounded p-2 bg-gray-800 text-blue-300 font-bold focus:ring-2 focus:ring-blue-500 outline-none font-mono">
+                    <input type="number" step="0.0001" id="h-input" required placeholder="Ex: 631.5034" class="w-full text-sm border border-gray-600 rounded p-2 bg-gray-800 text-blue-300 font-bold focus:ring-2 focus:ring-blue-500 outline-none font-mono">
                 </div>
 
                 <button type="submit" id="btn-salvar" class="w-full bg-blue-600 hover:bg-blue-500 text-white text-sm font-bold py-2.5 rounded transition-colors shadow-lg flex justify-center items-center gap-2">
@@ -172,7 +172,7 @@
                         *Se houver índice no início, ele será ignorado.
                     </p>
                 </div>
-                <textarea id="textarea-lote" class="w-full text-xs border border-gray-700 rounded p-2 bg-gray-900 text-gray-300 focus:ring-2 focus:ring-emerald-500 h-24 outline-none font-mono resize-none" placeholder="PVMS001&#9;7622789,859&#9;665481,566&#9;632,677"></textarea>
+                <textarea id="textarea-lote" class="w-full text-xs border border-gray-700 rounded p-2 bg-gray-900 text-gray-300 focus:ring-2 focus:ring-emerald-500 h-24 outline-none font-mono resize-none" placeholder="ponto 01&#9;7622825&#9;665464&#9;631,5034"></textarea>
                 <button type="button" id="btn-processar-lote" onclick="processarLote()" class="w-full mt-3 bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold py-2.5 rounded transition-colors shadow-lg flex justify-center items-center gap-2">
                     <i class="fa-solid fa-microchip"></i> Processar (EPSG:31983)
                 </button>
@@ -218,7 +218,7 @@
                         <i class="fa-solid fa-chart-line text-xl"></i>
                     </div>
                     <div>
-                        <h2 class="text-xl font-bold text-white tracking-wide" id="modal-titulo">MARCO-01</h2>
+                        <h2 class="text-xl font-bold text-white tracking-wide" id="modal-titulo">ponto 01</h2>
                         <p class="text-xs text-gray-400 uppercase tracking-widest mt-0.5">Análise Histórica de Altitude</p>
                     </div>
                 </div>
@@ -297,11 +297,10 @@
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 
     <script>
-        // Definição do CRS EPSG:31983 (SIRGAS 2000 / UTM zone 23S) - Essencial para Minas Gerais
+        // Definição do CRS EPSG:31983 (SIRGAS 2000 / UTM zone 23S)
         proj4.defs("EPSG:31983","+proj=utm +zone=23 +south +ellps=GRS80 +towgs84=0,0,0,0,0,0,0 +units=m +no_defs +type=crs");
 
         // Estado Global da Aplicação
-        // Começamos com a base zerada e inserimos os dados fornecidos
         const db = {
             pontos: [],
             leituras: {}
@@ -311,7 +310,7 @@
         let markers = {};
         let graficoAtual = null;
 
-        // Base maps de alta resolução solicitados
+        // Base maps de alta resolução
         const basemaps = {
             "Google Hybrid (Padrão)": L.tileLayer('https://mt1.google.com/vt/lyrs=y&x={x}&y={y}&z={z}', {
                 attribution: '&copy; Google', maxZoom: 22
@@ -324,11 +323,27 @@
             })
         };
 
+        // --- Funções Auxiliares ---
+
+        function compararPontos(a, b) {
+            const matchA = a.id.match(/\d+/);
+            const matchB = b.id.match(/\d+/);
+            if (matchA && matchB) {
+                const diff = parseInt(matchA[0], 10) - parseInt(matchB[0], 10);
+                if (diff !== 0) return diff;
+            }
+            return a.id.localeCompare(b.id);
+        }
+
+        function obterRotuloPin(id) {
+            const match = id.match(/\d+/);
+            if (match) return match[0];
+            return id.substring(0, 3);
+        }
+
         // --- Funções de Negócio ---
 
         function calcularRecalque(h0, h_atual) {
-            // Cota Inicial (H0) - Cota Atual (H_atual) = Recalque. 
-            // Positivo significa que desceu. * 1000 converte m para mm.
             return ((h0 - h_atual) * 1000);
         }
 
@@ -344,25 +359,20 @@
         }
 
         function initMap() {
-            // Inicializa no centro aproximado dos dados UTM fornecidos (convertidos)
             map = L.map('map', { 
                 zoomControl: false,
-                layers: [basemaps["Google Hybrid (Padrão)"]] // Definindo o padrão solicitado
-            }).setView([-20.1, -43.8], 15); 
+                layers: [basemaps["Google Hybrid (Padrão)"]]
+            }).setView([-21.48, -43.32], 15); 
 
             L.control.zoom({ position: 'topright' }).addTo(map);
-            
-            // Controle de Camadas (Layer Control)
             L.control.layers(basemaps, {}, { position: 'bottomright' }).addTo(map);
 
-            // Carrega os dados de exemplo fornecidos na inicialização para popular a dashboard
             carregarDadosIniciais();
         }
 
         // --- Funções de Interface UI ---
 
         function atualizarInterface() {
-            // Limpa marcadores
             Object.values(markers).forEach(m => map.removeLayer(m));
             markers = {};
 
@@ -375,14 +385,7 @@
                  return;
             }
 
-            // Ordenar pontos alfabeticamente
-            const pontosOrdenados = [...db.pontos].sort((a, b) => {
-                // Tenta ordenar numericamente se for número puro (para IDs como 1, 2, 10 ficarem na ordem)
-                const numA = parseInt(a.id);
-                const numB = parseInt(b.id);
-                if (!isNaN(numA) && !isNaN(numB)) return numA - numB;
-                return a.id.localeCompare(b.id);
-            });
+            const pontosOrdenados = [...db.pontos].sort(compararPontos);
 
             pontosOrdenados.forEach(ponto => {
                 const leituras = obterLeiturasOrdenadas(ponto.id);
@@ -393,15 +396,15 @@
                 const status = avaliarStatus(recalque);
 
                 // Criar Marcador Leaflet Customizado (DivIcon)
-                const iconHtml = `<div class="marker-pin ${status.classe}"><span>${ponto.id.substring(0,3)}</span></div>`;
+                const labelPin = obterRotuloPin(ponto.id);
+                const iconHtml = `<div class="marker-pin ${status.classe}"><span>${labelPin}</span></div>`;
                 const icon = L.divIcon({ className: 'bg-transparent', html: iconHtml, iconSize: [30, 30], iconAnchor: [15, 15] });
 
                 const marker = L.marker([ponto.lat, ponto.lng], { icon: icon }).addTo(map);
                 
-                // Tooltip Dark Mode
                 marker.bindTooltip(`
                     <div class="font-sans">
-                        <div class="font-bold text-base border-b border-gray-700 pb-1 mb-1">${ponto.id}</div>
+                        <div class="font-bold text-base border-b border-gray-700 pb-1 mb-1 uppercase">${ponto.id}</div>
                         <div class="text-xs text-gray-300">Ref (H0): <span class="font-mono">${ponto.h0.toFixed(4)}</span> m</div>
                         <div class="text-xs text-gray-300">Atual (H): <span class="font-mono">${h_atual.toFixed(4)}</span> m</div>
                         <div class="text-sm mt-1 pt-1 border-t border-gray-700">Recalque: <b style="color:${status.cor}">${recalque.toFixed(1)} mm</b></div>
@@ -411,7 +414,7 @@
                 marker.on('click', () => abrirAnalise(ponto.id));
                 markers[ponto.id] = marker;
 
-                // Item na Sidebar (Dark)
+                // Item na Sidebar
                 const div = document.createElement('div');
                 div.className = 'bg-gray-850 p-3 rounded border border-gray-800 cursor-pointer hover:border-blue-500 hover:bg-gray-800 transition-all group';
                 div.onclick = () => {
@@ -421,11 +424,11 @@
                 
                 div.innerHTML = `
                     <div class="flex justify-between items-center mb-2">
-                        <span class="font-bold text-gray-200 text-sm group-hover:text-blue-400 transition-colors"><i class="fa-solid fa-location-dot text-gray-600 mr-1.5 text-xs"></i>${ponto.id}</span>
+                        <span class="font-bold text-gray-200 text-sm group-hover:text-blue-400 transition-colors uppercase"><i class="fa-solid fa-location-dot text-gray-600 mr-1.5 text-xs"></i>${ponto.id}</span>
                         <span class="text-[9px] font-bold px-2 py-0.5 rounded uppercase tracking-wider ${status.bgClass} ${status.textClass}">${status.texto}</span>
                     </div>
                     <div class="flex justify-between text-[11px] font-mono bg-gray-950 p-1.5 rounded border border-gray-800 text-gray-400">
-                        <span>H: <span class="text-gray-300">${h_atual.toFixed(3)}</span>m</span>
+                        <span>H: <span class="text-gray-300">${h_atual.toFixed(4)}</span>m</span>
                         <span>&Delta; <span class="${status.textClass} font-bold">${recalque.toFixed(1)} mm</span></span>
                     </div>
                 `;
@@ -437,12 +440,7 @@
             const select = document.getElementById('ponto-select');
             select.innerHTML = '<option value="">Selecione o marco...</option>';
             
-            db.pontos.sort((a,b)=>{
-                const numA = parseInt(a.id);
-                const numB = parseInt(b.id);
-                if (!isNaN(numA) && !isNaN(numB)) return numA - numB;
-                return a.id.localeCompare(b.id);
-            }).forEach(p => {
+            [...db.pontos].sort(compararPontos).forEach(p => {
                 select.innerHTML += `<option value="${p.id}">${p.id}</option>`;
             });
             document.getElementById('data-input').value = new Date().toISOString().split('T')[0];
@@ -455,7 +453,6 @@
             const leituras = obterLeiturasOrdenadas(id);
             const ultima = leituras.length > 0 ? leituras[leituras.length - 1] : null;
             
-            // Sugere a última coordenada N e E lida para facilitar
             document.getElementById('n-input').value = ultima ? ultima.n : pt.n_ref;
             document.getElementById('e-input').value = ultima ? ultima.e : pt.e_ref;
             document.getElementById('h-input').value = ultima ? ultima.h : pt.h0;
@@ -473,7 +470,6 @@
 
             if (!db.leituras[id]) db.leituras[id] = [];
             
-            // Atualiza leitura do dia ou cria nova
             const index = db.leituras[id].findIndex(l => l.data === data);
             if (index >= 0) db.leituras[id][index] = { data, n, e: e_coord, h };
             else db.leituras[id].push({ data, n, e: e_coord, h });
@@ -500,18 +496,16 @@
             let h_atual = ultima ? ultima.h : ponto.h0;
             let recalque_max = 0;
             
-            // Procura o maior recalque no histórico
             leituras.forEach(l => {
                 let rec = calcularRecalque(ponto.h0, l.h);
                 if(rec > recalque_max) recalque_max = rec;
             });
-            // Se o atual for maior, garante o atual (no caso de elevação, recalque é negativo)
             const recalque_atual = calcularRecalque(ponto.h0, h_atual);
             if (recalque_atual > recalque_max) recalque_max = recalque_atual;
 
             const status = avaliarStatus(recalque_atual);
 
-            document.getElementById('modal-titulo').innerText = ponto.id;
+            document.getElementById('modal-titulo').innerText = ponto.id.toUpperCase();
             document.getElementById('kpi-cota-proj').innerText = `${ponto.h0.toFixed(4)} m`;
             document.getElementById('kpi-cota-atual').innerText = `${h_atual.toFixed(4)} m`;
             document.getElementById('kpi-recalque').innerText = `${recalque_atual.toFixed(1)} mm`;
@@ -519,7 +513,6 @@
             
             document.getElementById('kpi-status-container').innerHTML = `<span class="px-3 py-1 text-xs font-bold rounded uppercase tracking-wider ${status.bgClass} ${status.textClass}">${status.texto}</span>`;
 
-            // Preenche Tabela (Dark Mode)
             const tbody = document.getElementById('tabela-historico');
             tbody.innerHTML = `
                 <tr class="bg-blue-900/20 border-b border-gray-700">
@@ -552,7 +545,6 @@
             const modal = document.getElementById('modal-analise');
             const content = document.getElementById('modal-content');
             modal.classList.remove('hidden');
-            // Timeout para animação de opacidade e escala
             setTimeout(() => {
                 modal.classList.remove('opacity-0');
                 content.classList.remove('scale-95');
@@ -571,7 +563,6 @@
             const ctx = document.getElementById('graficoAltitude').getContext('2d');
             if (graficoAtual) graficoAtual.destroy();
 
-            // Configuração global do Chart.js para Dark Mode
             Chart.defaults.color = '#9ca3af'; 
             Chart.defaults.font.family = 'Inter';
 
@@ -580,7 +571,6 @@
             const dataH0 = [];
 
             if (leituras.length > 0) {
-                // Adiciona ponto fake para mostrar a referência no gráfico visualmente antes da leitura 1
                 labels.push('Ref. Base');
                 dataH.push(ponto.h0);
                 dataH0.push(ponto.h0);
@@ -597,7 +587,7 @@
             const minH = Math.min(...todasAlturas);
             const maxH = Math.max(...todasAlturas);
             const diff = maxH - minH;
-            const padding = diff === 0 ? 0.020 : diff * 0.2; // Espaçamento dinâmico do eixo Y
+            const padding = diff === 0 ? 0.020 : diff * 0.2;
 
             graficoAtual = new Chart(ctx, {
                 type: 'line',
@@ -607,28 +597,27 @@
                         {
                             label: 'Altitude H [m]',
                             data: dataH,
-                            borderColor: '#2ecc71', // Verde Accent
+                            borderColor: '#2ecc71',
                             backgroundColor: '#2ecc71',
                             borderWidth: 3,
                             pointRadius: 5,
                             pointHoverRadius: 8,
-                            pointBackgroundColor: '#163829', // Fundo painel
+                            pointBackgroundColor: '#163829',
                             pointBorderColor: '#2ecc71',
                             pointBorderWidth: 2,
-                            tension: 0.2, // Curva suave
+                            tension: 0.2,
                             zIndex: 10
                         },
                         {
                             label: 'Base H0 [m]',
                             data: dataH0,
-                            borderColor: '#6b7280', // gray-500
+                            borderColor: '#6b7280',
                             borderWidth: 2,
                             borderDash: [5, 5],
                             pointRadius: 0,
                             fill: {
                                 target: 0,
-                                // Cores translúcidas dependendo se subiu ou desceu
-                                above: 'rgba(239, 68, 68, 0.05)', // Vermelho fraco se recalcou (H medido < H0 -> preenche 'above' para baixo)
+                                above: 'rgba(239, 68, 68, 0.05)',
                                 below: 'rgba(16, 185, 129, 0.05)'
                             },
                             zIndex: 5
@@ -640,7 +629,7 @@
                     maintainAspectRatio: false,
                     interaction: { mode: 'index', intersect: false },
                     plugins: {
-                        legend: { display: false }, // Legenda customizada via HTML
+                        legend: { display: false },
                         tooltip: {
                             backgroundColor: 'rgba(17, 24, 39, 0.95)',
                             titleColor: '#e5e7eb',
@@ -671,7 +660,7 @@
                             grid: { color: 'rgba(75, 85, 99, 0.2)' },
                             border: { color: 'rgba(75, 85, 99, 0.5)' },
                             ticks: {
-                                callback: val => val.toFixed(3),
+                                callback: val => val.toFixed(4),
                                 color: '#9ca3af'
                             }
                         },
@@ -701,7 +690,6 @@
             let inseridos = 0;
             const dataHoje = new Date().toISOString().split('T')[0];
 
-            // Parser robusto para pt-BR
             const pFloat = (str) => {
                 if (!str) return NaN;
                 let s = str.toString().trim();
@@ -716,29 +704,24 @@
                 
                 let id = '', nStr = '', eStr = '', hStr = '';
                 
-                // Trata a estrutura (Índice, ID, N, E, H) ou (ID, N, E, H) baseada no seu exemplo
-                // Verifica se a primeira coluna é número puro (índice) e descartamos
                 let isFirstNum = !isNaN(parseFloat(cols[0].replace(',','.'))) && !isNaN(cols[0] * 1);
                 
                 if (cols.length >= 5 && isFirstNum) {
-                    id = cols[1]; nStr = cols[2]; eStr = cols[3]; hStr = cols[4];
+                    id = cols[1].trim(); nStr = cols[2]; eStr = cols[3]; hStr = cols[4];
                 } else if (cols.length >= 4) {
-                    id = cols[0]; nStr = cols[1]; eStr = cols[2]; hStr = cols[3];
+                    id = cols[0].trim(); nStr = cols[1]; eStr = cols[2]; hStr = cols[3];
                 } else {
-                    return; // Ignora linha mal formatada
+                    return;
                 }
 
                 let n = pFloat(nStr);
                 let e = pFloat(eStr);
                 let h = pFloat(hStr);
 
-                // Garante N ~7mi, E ~600k (Regra zona 23S)
                 if (e > n) { [n, e] = [e, n]; } 
 
                 if (!id || isNaN(n) || isNaN(e) || isNaN(h)) return;
 
-                // Transforma UTM SIRGAS 2000 (Z23S) -> WGS84 (Lat/Lng)
-                // O Leaflet espera [lat, lng], Proj4js devolve [lng, lat] (X, Y)
                 let lngLat;
                 try {
                     lngLat = proj4("EPSG:31983", "EPSG:4326", [e, n]);
@@ -750,15 +733,12 @@
                 const lng = lngLat[0];
                 const lat = lngLat[1];
 
-                // Busca Ponto ou Cria
                 let ponto = db.pontos.find(p => p.id === id);
                 if (!ponto) {
-                    // Trata a primeira inserção como "Cota de Projeto" (H0)
                     ponto = { id, lat, lng, h0: h, n_ref: n, e_ref: e };
                     db.pontos.push(ponto);
                 }
 
-                // Salva leitura
                 if (!db.leituras[id]) db.leituras[id] = [];
                 const idxLeitura = db.leituras[id].findIndex(l => l.data === dataHoje);
                 if (idxLeitura >= 0) db.leituras[id][idxLeitura] = { data: dataHoje, n, e, h };
@@ -771,9 +751,8 @@
                 atualizarInterface();
                 preencherSelectFormulario();
                 
-                // Enquadrar no mapa
                 const bounds = L.latLngBounds(db.pontos.map(p => [p.lat, p.lng]));
-                map.fitBounds(bounds, { padding: [50, 50], maxZoom: 18 });
+                map.fitBounds(bounds, { padding: [50, 50], maxZoom: 19 });
 
                 if(!dadosString) {
                     textarea.value = '';
@@ -787,52 +766,39 @@
             }
         }
 
-        // Função com os seus 29 pontos
+        // Pontos atualizados conforme tabela fornecida
         function carregarDadosIniciais() {
-            // Seus 29 pontos inseridos (ID [TAB] N [TAB] E [TAB] H)
-            const mockData = `1\t7622824,952\t665463,978\t0,000
-2\t7622832,631\t665444,811\t0,000
-3\t7622834,494\t665432,512\t0,000
-4\t7622839,288\t665402,590\t0,000
-5\t7622842,988\t665378,372\t0,000
-6\t7622846,768\t665354,589\t0,000
-7\t7622849,616\t665349,274\t0,000
-8\t7622856,053\t665344,959\t0,000
-9\t7622889,012\t665357,849\t0,000
-10\t7622867,927\t665355,113\t0,000
-11\t7622857,646\t665364,998\t0,000
-12\t7622853,435\t665391,560\t0,000
-13\t7622849,022\t665421,359\t0,000
-14\t7622846,671\t665435,854\t0,000
-15\t7622848,296\t665450,184\t0,000
-16\t7622860,441\t665447,172\t0,000
-17\t7622858,443\t665437,669\t0,000
-18\t7622860,582\t665423,065\t0,000
-19\t7622865,163\t665393,480\t0,000
-20\t7622870,222\t665366,524\t0,000
-21\t7622878,398\t665364,979\t0,000
-22\t7622895,922\t665372,419\t0,000
-23\t7622873,059\t665443,724\t0,000
-24\t7622870,258\t665439,166\t0,000
-25\t7622872,225\t665425,090\t0,000
-26\t7622876,743\t665395,335\t0,000
-27\t7622894,215\t665407,346\t0,000
-28\t7622597,597\t665415,151\t0,000
-29\t7622684,102\t665465,770\t0,000`;
+            const pontosAtualizados = `ponto 01\t7622825\t665464\t631,5034
+ponto 02\t7622832\t665445\t631,4333
+ponto 03\t7622834\t665432,6\t631,5164
+ponto 04\t7622839\t665402,7\t631,6443
+ponto 05\t7622843\t665378,5\t631,4457
+ponto 06\t7622847\t665354,7\t632,0421
+ponto 07\t7622850\t665348,8\t632,2542
+ponto 08\t7622856\t665344,3\t631,9701
+ponto 09\t7622889\t665357,2\t624,6907
+ponto 10\t7622868\t665354,5\t625,372
+ponto 11\t7622857\t665365\t625,7715
+ponto 12\t7622853\t665391,5\t625,7447
+ponto 13\t7622848\t665421,4\t625,7956
+ponto 14\t7622846\t665435,9\t625,7864
+ponto 15\t7622848\t665450,8\t626,0394
+ponto 16\t7622860\t665447,7\t620,7824
+ponto 17\t7622858\t665437,8\t620,6828
+ponto 18\t7622860\t665423,2\t620,7353
+ponto 19\t7622865\t665393,6\t620,7267
+ponto 20\t7622870\t665366\t620,7457
+ponto 21\t7622879\t665364,3\t620,2768
+ponto 22\t7622887\t665367,6\t618,1024
+ponto 23\t7622876\t665395,3\t615,7626
+ponto 24\t7622872\t665425\t615,765
+ponto 25\t7622870\t665439,3\t615,77
+ponto 26\t7622872\t665444,5\t615,6383
+ponto 27\t7622894\t665407,3\t610,965
+ponto 28\t7622893\t665407,2\t610,9037
+ponto 29\t7622893\t665407,3\t610,9052`;
             
-            processarLote(mockData);
-
-            // Simular algumas leituras passadas para o marco 1 para ver o gráfico funcionando bem
-            if (db.pontos.length > 0) {
-                const pt = db.pontos.find(p => p.id === '1');
-                if(pt && db.leituras['1']) {
-                    db.leituras['1'].push(
-                        { data: '2023-01-15', n: pt.n_ref, e: pt.e_ref, h: pt.h0 - 0.005 },
-                        { data: '2023-06-20', n: pt.n_ref, e: pt.e_ref, h: pt.h0 - 0.012 },
-                        { data: '2023-11-10', n: pt.n_ref, e: pt.e_ref, h: pt.h0 - 0.018 }
-                    );
-                }
-            }
+            processarLote(pontosAtualizados);
             atualizarInterface();
         }
 
